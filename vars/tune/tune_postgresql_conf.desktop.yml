@@ -1,0 +1,8 @@
+---
+
+#
+# Small Desktop
+# 
+postgresql_shared_buffers: "{{ (ansible_memory_mb.real.total * 0.0625)|int|abs }}MB"
+
+...

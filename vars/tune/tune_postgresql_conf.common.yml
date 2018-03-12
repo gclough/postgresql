@@ -1,0 +1,107 @@
+---
+
+#------------------------------------------------------------------------------
+# Tuning parameters that are common to all machine types
+#------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
+# CONNECTIONS AND AUTHENTICATION
+#------------------------------------------------------------------------------
+
+# - Connection Settings -
+postgresql_superuser_reserved_connections: "10"
+
+# - Security and Authentication -
+postgresql_ssl: "on"
+postgresql_ssl_renegotiation_limit: "0"
+
+#------------------------------------------------------------------------------
+# RESOURCE USAGE (except WAL)
+#------------------------------------------------------------------------------
+
+# - Memory -
+postgresql_shared_buffers: "{{ (ansible_memory_mb.real.total * 0.25)|int|abs }}MB"
+postgresql_temp_buffers: "{{ (ansible_memory_mb.real.total * 0.25 / postgresql_max_connections)|int|abs }}MB"
+postgresql_work_mem: "{{ (ansible_memory_mb.real.total * 0.25 / postgresql_max_connections)|int|abs }}MB"
+postgresql_maintenance_work_mem: "{{ (ansible_memory_mb.real.total * 0.25 / postgresql_autovacuum_max_workers|float)|int|abs }}MB"
+
+# - Kernel Resource Usage -
+postgresql_shared_preload_libraries:
+  - pg_stat_statements
+
+# - Background Writer -
+postgresql_bgwriter_delay: "50ms"
+postgresql_bgwriter_lru_maxpages: "500"
+postgresql_bgwriter_lru_lultiplier: "4.0"
+
+# - Asynchronous Behavior -
+postgresql_effective_io_concurrency: "8"
+postgresql_max_worker_processes: "{{ ((ansible_processor_count + 1) / 2)|int|abs}}"
+
+#------------------------------------------------------------------------------
+# WRITE AHEAD LOG
+#------------------------------------------------------------------------------
+
+# - Settings -
+postgresql_wal_level: "logical" # >= v9.6
+postgresql_wal_compression: "on" # >= v9.6
+
+# - Checkpoints -
+postgresql_checkpoint_timeout: "30min"
+postgresql_checkpoint_segments: "64" # <= v9.4
+postgresql_min_wal_size: "512MB" # >= v9.5
+postgresql_checkpoint_completion_target: "0.9"
+
+# - Archiving -
+postgresql_archive_mode: "on"
+postgresql_archive_command: 'echo WARNING: Skipping archive of %f. PITR is not possible without this file.'
+
+#------------------------------------------------------------------------------
+# REPLICATION
+#------------------------------------------------------------------------------
+
+# - Sending Server(s) -
+postgresql_max_wal_senders: "10"
+postgresql_max_replication_slots: "10"
+
+#------------------------------------------------------------------------------
+# QUERY TUNING
+#------------------------------------------------------------------------------
+
+# - Planner Cost Constants -
+postgresql_random_page_cost: "2.0"
+postgresql_effective_cache_size: "{{ (ansible_memory_mb.real.total * 0.70)|int|abs }}MB"
+
+#------------------------------------------------------------------------------
+# ERROR REPORTING AND LOGGING
+#------------------------------------------------------------------------------
+
+# - Where to Log -
+postgresql_logging_collector: "on"
+
+# - What to Log -
+postgresql_log_checkpoints: "on"
+postgresql_log_connections: "on"
+postgresql_log_disconnections: on"
+postgresql_log_line_prefix: "%t [%p]: [%l-1] user=%u,db=%d,app=%a,client=%h "
+postgresql_log_lock_waits: "on"
+
+#------------------------------------------------------------------------------
+# AUTOVACUUM PARAMETERS
+#------------------------------------------------------------------------------
+
+postgresql_autovacuum_max_workers: "{{ ((ansible_processor_count + 3) / 4)|int|abs }}"
+postgresql_autovacuum_vacuum_threshold: 10000
+postgresql_autovacuum_analyze_threshold: 100
+postgresql_autovacuum_vacuum_scale_factor: 0.05
+postgresql_autovacuum_analyze_scale_factor: 0.05
+postgresql_autovacuum_vacuum_cost_limit: 10000
+
+#------------------------------------------------------------------------------
+# CLIENT CONNECTION DEFAULTS
+#------------------------------------------------------------------------------
+
+# - Statement Behavior -
+postgresql_idle_in_transaction_session_timeout: 600000  # 10 minutes
+
+...

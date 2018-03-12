@@ -6,6 +6,17 @@
     - "../vars/empty.yml"
   tags: [always]
 
+- debug:
+    var: postgresql_tune_server_use
+
+- include_vars:
+    file: "{{ item }}"
+  with_items:
+    - "tune/tune_postgresql_conf.common.yml"
+    - "tune/tune_postgresql_conf.{{ postgresql_tune_server_use }}.yml"
+  when: postgresql_tune_server_use != false
+  tags: [always]
+
 - include: install.yml
   when: ansible_pkg_mgr == "apt"
   tags: [postgresql, postgresql-install]
