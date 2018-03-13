@@ -17,7 +17,7 @@
 - include: extensions.yml
   tags: [postgresql, postgresql-extensions]
 
-- include: tune.yml
+- import_tasks: tune.yml
   when: postgresql_tune_server_use != false
   tags: [postgresql, postgresql-configure]
 
