@@ -9,7 +9,7 @@
 #------------------------------------------------------------------------------
 
 # - Security and Authentication -
-postgresql_ssl: "on" # Allow SSL, as restart is required to change
+## Wait until Pull #303 is merged ## postgresql_ssl: "on" # Allow SSL, as restart is required to change
 postgresql_ssl_renegotiation_limit: "0" # Turn off, as it's buggy
 
 #------------------------------------------------------------------------------
