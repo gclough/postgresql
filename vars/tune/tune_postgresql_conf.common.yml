@@ -57,7 +57,7 @@ postgresql_checkpoint_completion_target: "0.9" # Spread I/O more evenly between 
 
 # - Archiving -
 postgresql_archive_mode: "on" # Always helpful, and changing needs a restart
-postgresql_archive_command: 'echo WARNING: Skipping archive of %f. Recovery (PITR) is not possible without this file.' # Warn the DBA they can't do Point In Time Recovery (PITR) without saving them
+postgresql_archive_command: 'echo WARNING: Skipping archive of %f. Point in Time Recovery is not possible without this file.' # Warn the DBA they can't do Point In Time Recovery (PITR) without saving them
 
 #------------------------------------------------------------------------------
 # REPLICATION
