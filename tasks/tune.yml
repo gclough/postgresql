@@ -27,7 +27,4 @@
       - "tune/tune_postgresql_conf.{{ postgresql_tune_server_use }}.{{ postgresql_version }}.yml"
       skip: true
 
-- debug:
-    var: postgresql_tuning_memory_mb
-
 ...
