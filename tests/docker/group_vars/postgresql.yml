@@ -33,3 +33,6 @@ postgresql_database_extensions:
     - adminpack
     - pgcrypto
     - unaccent
+
+postgresql_tune_server_use: "oltp"
+postgresql_tuning_memory_percent: 90

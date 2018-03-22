@@ -5,6 +5,13 @@
 #------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------
+# Global adjustments to tuning formulas, not a part of postgresql.conf themselves,
+# but they affect the formulas to give different numbers
+#------------------------------------------------------------------------------
+postgresql_tuning_memory_percent: "100"  # What percent of RAM to dedicate to PostgreSQL
+postgresql_tuning_memory_mb: "{{ (postgresql_tuning_memory_percent|int / 100 * ansible_memory_mb.real.total)|int }}"
+
+#------------------------------------------------------------------------------
 # CONNECTIONS AND AUTHENTICATION
 #------------------------------------------------------------------------------
 
@@ -17,10 +24,10 @@ postgresql_ssl_renegotiation_limit: "0" # Turn off, as it's buggy
 #------------------------------------------------------------------------------
 
 # - Memory -
-postgresql_shared_buffers: "{{ [(ansible_memory_mb.real.total * 0.25)|int|abs,16384]|min }}MB" # 25% of RAM, maximum of 16GB
-postgresql_temp_buffers: "{{ (ansible_memory_mb.real.total * 0.25 / postgresql_max_connections)|int|abs }}MB" # 25% of RAM, divided by max_connections
-postgresql_work_mem: "{{ (ansible_memory_mb.real.total * 0.25 / postgresql_max_connections)|int|abs }}MB" # 25% of RAM, divided by max_connections
-postgresql_maintenance_work_mem: "{{ (ansible_memory_mb.real.total * 0.15 / postgresql_autovacuum_max_workers|float)|int|abs }}MB" # 15% of RAM, divided by autovacuum_max_workers
+postgresql_shared_buffers: "{{ [(postgresql_tuning_memory_mb|int * 0.25)|int,16384]|min }}MB" # 25% of RAM, maximum of 16GB
+postgresql_temp_buffers: "{{ [(postgresql_tuning_memory_mb|int * 0.25 / postgresql_max_connections)|int,1]|max }}MB" # 25% of RAM, divided by max_connections, minimum of 1MB
+postgresql_work_mem: "{{ [(postgresql_tuning_memory_mb|int * 0.25 / postgresql_max_connections)|int,1]|max }}MB" # 25% of RAM, divided by max_connections, minimum of 1MB
+postgresql_maintenance_work_mem: "{{ [(postgresql_tuning_memory_mb|int * 0.15 / postgresql_autovacuum_max_workers|float)|int,1]|max }}MB" # 15% of RAM, divided by autovacuum_max_workers, minimum of 1MB
 
 # - Kernel Resource Usage -
 postgresql_shared_preload_libraries:
@@ -30,14 +37,14 @@ postgresql_shared_preload_libraries:
 postgresql_vacuum_cost_limit: 10000 # Make vacuum more aggressive
 
 # - Background Writer -
-postgresql_bgwriter_delay: "100ms" # Default 200ms too high, go lower for high update databases
-postgresql_bgwriter_lru_maxpages: "1000" # Default 100 too low
+postgresql_bgwriter_delay: "100ms" # Default 200ms too high, go even lower for high update databases
+postgresql_bgwriter_lru_maxpages: "1000" # Default 100 is too low
 postgresql_bgwriter_lru_lultiplier: "4.0" # Make bgwriter more aggressive
 
 # - Asynchronous Behavior -
-postgresql_effective_io_concurrency: "{{ [([((ansible_processor_vcpus + 1) * 0.5 )|int|abs,1]|max),16]|min }}" # Assume more vcpus means more I/O, minimum of 1, maximum of 16
-postgresql_max_worker_processes: "{{ ((ansible_processor_vcpus + 1) * 0.9 )|int|abs }}" # 90% of vcpus
-postgresql_max_parallel_workers_per_gather: "{{ [(ansible_processor_vcpus * 0.2 )|int|abs,1]|max }}" # 20% of vcpus, minimum of 1
+postgresql_effective_io_concurrency: "{{ [([((ansible_processor_vcpus + 1) * 0.5 )|int,1]|max),16]|min }}" # Assume more vcpus means more I/O, minimum of 1, maximum of 16
+postgresql_max_worker_processes: "{{ [((ansible_processor_vcpus + 1) * 0.9 )|int,1]|max }}" # 90% of vcpus, minimum of 1
+postgresql_max_parallel_workers_per_gather: "{{ [(ansible_processor_vcpus * 0.2 )|int,1]|max }}" # 20% of vcpus, minimum of 1
 
 #------------------------------------------------------------------------------
 # WRITE AHEAD LOG
@@ -46,12 +53,12 @@ postgresql_max_parallel_workers_per_gather: "{{ [(ansible_processor_vcpus * 0.2 
 # - Settings -
 postgresql_wal_level: "logical" # >= v9.4. Always use the maximum, as changing needs a restart
 postgresql_wal_compression: "on" # >= v9.5. Smaller WAL
-postgresql_wal_buffers: "{{ (([[(ansible_memory_mb.real.total * 0.01)|int|abs, 16]|max,64]|min / 16)|round * 16)|int|abs }}MB" # 1% of RAM, minimum 16MB, maximum 64MB, rounded to 16MB chunks
+postgresql_wal_buffers: "{{ (([[(postgresql_tuning_memory_mb|int * 0.01)|int, 16]|max,64]|min / 16)|round * 16)|int }}MB" # 1% of RAM, minimum 16MB, maximum 64MB, rounded to 16MB chunks
 
 # - Checkpoints -
 postgresql_checkpoint_timeout: "30min" # Less checkpoints = less I/O, but longer crash recovery
 postgresql_checkpoint_segments: "64" # <= v9.4 (64 x 16MB = 1GB)
-postgresql_max_wal_size: "{{ ([[(ansible_memory_mb.real.total * 0.05)|int|abs, 1]|max,64]|min)|int|abs }}GB" # (5% of RAM * 1024), minimum 1GB, maximum 64GB, rounded to 1GB chunks
+postgresql_max_wal_size: "{{ ([[(postgresql_tuning_memory_mb|int * 0.05)|int, 1]|max,64]|min)|int }}GB" # (5% of RAM * 1024), minimum 1GB, maximum 64GB, rounded to 1GB chunks
 postgresql_min_wal_size: "512MB" # >= v9.5. Do not remove WAL, but recycle it
 postgresql_checkpoint_completion_target: "0.9" # Spread I/O more evenly between checkpoints
 
@@ -77,7 +84,7 @@ postgresql_hot_standby: "on" # Always default to on, even on Primary servers. He
 # - Planner Cost Constants -
 postgresql_random_page_cost: "2.0" # Most disks are faster today, go to 1.0 for SSD
 postgresql_cpu_tuple_cost: "0.03" # Usually better explain plans
-postgresql_effective_cache_size: "{{ (ansible_memory_mb.real.total * 0.70)|int|abs }}MB" # 70% of RAM
+postgresql_effective_cache_size: "{{ (postgresql_tuning_memory_mb|int * 0.70)|int }}MB" # 70% of RAM
 
 #------------------------------------------------------------------------------
 # ERROR REPORTING AND LOGGING
@@ -97,7 +104,7 @@ postgresql_log_lock_waits: "on" # Helpful for monitoring/tuning
 # AUTOVACUUM PARAMETERS
 #------------------------------------------------------------------------------
 
-postgresql_autovacuum_max_workers: "{{ [(ansible_processor_vcpus * 0.20)|int|abs,1]|max }}" # 20% of vcpus, minimum of 1
+postgresql_autovacuum_max_workers: "{{ [(ansible_processor_vcpus * 0.20)|int,1]|max }}" # 20% of vcpus, minimum of 1
 postgresql_autovacuum_vacuum_threshold: "10000" # Don't vacuum smaller tables too frequently
 postgresql_autovacuum_analyze_threshold: "100" # Don't analyze smaller tables too frequently
 postgresql_autovacuum_vacuum_scale_factor: "0.05" # Vacuum larger tables more frequently

@@ -1,8 +1,9 @@
 ---
 
-#
-# Small Desktop
-# 
-postgresql_shared_buffers: "{{ (ansible_memory_mb.real.total * 0.0625)|int|abs }}MB"
+#------------------------------------------------------------------------------
+# Tuning parameters for a small "desktop" PC, which is not dedicated to PostgreSQL
+#------------------------------------------------------------------------------
+
+postgresql_tuning_memory_percent: "10"  # What percent of RAM to dedicate to PostgreSQL
 
 ...
