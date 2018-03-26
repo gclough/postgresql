@@ -406,6 +406,7 @@ postgresql_log_rotation_size:          10MB
 # These are relevant when logging to syslog:
 postgresql_syslog_facility:            "LOCAL0"
 postgresql_syslog_ident:               "postgres"
+postgresql_silent_mode:                off        # (<= 9.1)
 postgresql_syslog_sequence_numbers:    on         # (>= 9.6)
 postgresql_syslog_split_messages:      on         # (>= 9.6)
 # This is only relevant when logging to eventlog (win32) (>= 9.2):
