@@ -44,7 +44,6 @@
     pg_createcluster --start --locale {{ postgresql_locale }}
     -e {{ postgresql_encoding }} -d {{ postgresql_data_directory }}
     {{ postgresql_version }} {{ postgresql_cluster_name }}
-    --
     {% if postgresql_data_checksums and postgresql_version | version_compare('9.3', '>=') %}--data-checksums{% endif %}
     {% if postgresql_pwfile != "" %}--pwfile={{ postgresql_pwfile }} {% endif %}
     {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '<') %}--xlogdir={{ postgresql_wal_directory }} {% endif %}
