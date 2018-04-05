@@ -9,7 +9,7 @@
 
 - name: PostgreSQL | Make sure the postgres data directory exists
   file:
-    path: "{{postgresql_data_directory}}"
+    path: "{{ postgresql_data_directory }}"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     state: directory
@@ -51,6 +51,8 @@
   become: yes
   become_user: "{{ postgresql_service_user }}"
   when: ansible_os_family == "Debian" and postgresql_cluster_reset and pgdata_dir_exist.changed
+  register: postgresql_cluster_startup_conf
+  notify: restart postgresql
 
 - name: PostgreSQL | Check whether the postgres data directory is initialized
   stat:
@@ -88,21 +90,23 @@
 - name: PostgreSQL | Update configuration - pt. 1 (pg_hba.conf)
   template:
     src: pg_hba.conf.j2
-    dest: "{{postgresql_conf_directory}}/pg_hba.conf"
+    dest: "{{ postgresql_conf_directory }}/pg_hba.conf"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: 0640
   register: postgresql_configuration_pt1
+  notify: reload postgresql
 
 - name: PostgreSQL | Update configuration - pt. 2 (postgresql.conf)
   template:
     src: "postgresql.conf-{{ postgresql_version }}.j2"
     # if using pgtune, save the template to ".untuned"
-    dest: "{{postgresql_conf_directory}}/postgresql.conf{% if postgresql_pgtune %}.untuned{% endif %}"
+    dest: "{{ postgresql_conf_directory }}/postgresql.conf{% if postgresql_pgtune %}.untuned{% endif %}"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: 0640
   register: postgresql_configuration_pt2
+  notify: reload postgresql
 
 - name: PostgreSQL | Update configuration - pt. 3 (pgtune)
   become: true
@@ -112,9 +116,9 @@
     TMPDIR=$(mktemp -d)
     pgtune --input-config=postgresql.conf.untuned\
            --output-config=$TMPDIR/postgresql.conf\
-           {% if postgresql_pgtune_memory %}--memory {{postgresql_pgtune_memory|int}}{% endif %}\
-           --type {{postgresql_pgtune_type|quote}}\
-           {% if postgresql_pgtune_connections %}--connections {{postgresql_pgtune_connections|int}}{% endif %}\
+           {% if postgresql_pgtune_memory %}--memory {{ postgresql_pgtune_memory|int }}{% endif %}\
+           --type {{ postgresql_pgtune_type|quote }}\
+           {% if postgresql_pgtune_connections %}--connections {{ postgresql_pgtune_connections|int }}{% endif %}\
     # Compare the current config with the one procuded by pgtune (ignoring comments/blanks)
     if diff --ignore-blank-lines \
         <(sed -e 's/#.*//' postgresql.conf) \
@@ -128,15 +132,16 @@
     rm $TMPDIR/postgresql.conf
     rmdir $TMPDIR
   args:
-    chdir: "{{postgresql_conf_directory}}"
+    chdir: "{{ postgresql_conf_directory }}"
     executable: "/bin/bash"
   when: postgresql_pgtune
   register: postgresql_configuration_pt3
+  notify: reload postgresql
   changed_when: "'_OK_' not in postgresql_configuration_pt3.stdout"
 
 - name: PostgreSQL | Create folder for additional configuration files
   file:
-    name: "{{postgresql_conf_directory}}/conf.d"
+    name: "{{ postgresql_conf_directory }}/conf.d"
     state: directory
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
@@ -148,7 +153,7 @@
     state: directory
     mode: 0755
   when: ansible_os_family == "RedHat"
-  notify: restart postgresql with systemd
+  notify: restart postgresql
 
 - name: PostgreSQL | Create postgresql service for this cluster | RedHat v7 and later
   template:
@@ -174,11 +179,38 @@
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: u=rwX,g=rwXs,o=rx
-  notify: restart postgresql with service
+  notify: restart postgresql
+
+- name: PostgreSQL | Enable service
+  service:
+    name: "{{ postgresql_service_name }}"
+    enabled: yes
+  when: postgresql_service_enabled
+
+- name: PostgreSQL | Ensure PostgreSQL is running
+  service:
+    name: "{{ postgresql_service_name }}"
+    state: started
+  register: postgresql_cold_started
 
 - name: PostgreSQL | Reload all conf files
   service:
     name: "{{ postgresql_service_name }}"
     state: reloaded
-    state: restarted
-  when: postgresql_configuration_pt1.changed or postgresql_configuration_pt2.changed or postgresql_configuration_pt3.changed or postgresql_systemd_service_create.changed
+  notify: reload postgresql
+  when: not postgresql_cold_started.changed and
+        ( postgresql_configuration_pt1.changed or
+          postgresql_configuration_pt2.changed or
+          postgresql_configuration_pt3.changed or
+          postgresql_systemd_service_create.changed)
+
+- name: PostgreSQL | Check for parameter changes that require a restart | >= v9.5
+  become: yes
+  become_user: "{{ postgresql_service_user }}"
+  shell: "{{ postgresql_bin_directory }}/psql postgres --username {{ postgresql_admin_user }} --tuples-only --command='SELECT count(*) COUNT FROM pg_settings WHERE pending_restart IS true;'"
+  register: postgresql_check_for_param_changes
+  notify: reload postgresql
+  when: not postgresql_cold_started.changed and
+        postgresql_version | version_compare('9.5','>=')
+  changed_when: postgresql_check_for_param_changes.rc == 0 and
+                postgresql_check_for_param_changes.stdout | replace (' ','') != "0"
