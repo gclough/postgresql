@@ -13,7 +13,6 @@ postgresql_users:
     pass: md51a1dc91c907325c69271ddf0c944bc72
     encrypted: yes
 
-
   - name: zab
     pass: md51a1dc91c907325c69271ddf0c944bc72
     encrypted: yes
