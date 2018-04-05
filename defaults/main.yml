@@ -714,6 +714,11 @@ postgresql_pgtune_type: "Mixed"
 postgresql_pgtune_connections: no
 
 
+#------------------------------------------------------------------------------
+# Tune the postgresql.conf, without using PGTUNE
+#------------------------------------------------------------------------------
+# Database type, valid options are [no, dw, oltp, web, mixed, desktop]
+postgresql_tune_server_use: no
 
 
 postgresql_env:

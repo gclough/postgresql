@@ -36,3 +36,6 @@ postgresql_ext_install_contrib: true
 postgresql_ssl: false
 postgresql_pgtune: false
 postgresql_ext_install_postgis: false
+
+postgresql_tune_server_use: "oltp"
+postgresql_tuning_memory_percent: 90
