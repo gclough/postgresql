@@ -16,7 +16,7 @@ postgresql_tuning_memory_mb: "{{ (postgresql_tuning_memory_percent|int / 100 * a
 #------------------------------------------------------------------------------
 
 # - Security and Authentication -
-## Wait until Pull #303 is merged ## postgresql_ssl: "on" # Allow SSL, as restart is required to change
+postgresql_ssl: "on" # Allow SSL, as restart is required to change
 postgresql_ssl_renegotiation_limit: "0" # Turn off, as it's buggy
 
 #------------------------------------------------------------------------------
