@@ -9,7 +9,7 @@
 
 - name: PostgreSQL | Make sure the postgres data directory exists
   file:
-    path: "{{postgresql_data_directory}}"
+    path: "{{ postgresql_data_directory }}"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     state: directory
@@ -44,9 +44,15 @@
     pg_createcluster --start --locale {{ postgresql_locale }}
     -e {{ postgresql_encoding }} -d {{ postgresql_data_directory }}
     {{ postgresql_version }} {{ postgresql_cluster_name }}
+    {% if postgresql_data_checksums and postgresql_version | version_compare('9.3', '>=') %}--data-checksums{% endif %}
+    {% if postgresql_pwfile != "" %}--pwfile={{ postgresql_pwfile }} {% endif %}
+    {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '<') %}--xlogdir={{ postgresql_wal_directory }} {% endif %}
+    {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '>=') %}--waldir={{ postgresql_wal_directory }} {% endif %}
   become: yes
   become_user: "{{ postgresql_service_user }}"
   when: ansible_os_family == "Debian" and postgresql_cluster_reset and pgdata_dir_exist.changed
+  register: postgresql_cluster_startup_conf
+  notify: restart postgresql
 
 - name: PostgreSQL | Check whether the postgres data directory is initialized
   stat:
@@ -58,12 +64,20 @@
   command: >
     {{ postgresql_bin_directory }}/initdb -D {{ postgresql_data_directory }}
     --locale={{ postgresql_locale }} --encoding={{ postgresql_encoding }}
+    {% if postgresql_data_checksums and postgresql_version | version_compare('9.3', '>=') %}--data-checksums{% endif %}
+    {% if postgresql_pwfile != "" %}--pwfile={{ postgresql_pwfile }} {% endif %}
+    {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '<') %}--xlogdir={{ postgresql_wal_directory }} {% endif %}
+    {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '>=') %}--waldir={{ postgresql_wal_directory }} {% endif %}
   become: yes
   become_user: "{{ postgresql_service_user }}"
   when: ansible_os_family == "RedHat" and
         (postgresql_cluster_reset or
          pgdata_dir_exist.changed or
          not pgdata_dir_initialized.stat.exists)
+
+- name: PostgreSQL | Verify postgresql cluster version
+  command: grep ^{{ postgresql_version }}$ {{ postgresql_data_directory }}/PG_VERSION
+  changed_when: false
 
 - name: PostgreSQL | Ensure configuration directory exists
   file:
@@ -76,21 +90,23 @@
 - name: PostgreSQL | Update configuration - pt. 1 (pg_hba.conf)
   template:
     src: pg_hba.conf.j2
-    dest: "{{postgresql_conf_directory}}/pg_hba.conf"
+    dest: "{{ postgresql_conf_directory }}/pg_hba.conf"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: 0640
   register: postgresql_configuration_pt1
+  notify: reload postgresql
 
 - name: PostgreSQL | Update configuration - pt. 2 (postgresql.conf)
   template:
     src: "postgresql.conf-{{ postgresql_version }}.j2"
     # if using pgtune, save the template to ".untuned"
-    dest: "{{postgresql_conf_directory}}/postgresql.conf{% if postgresql_pgtune %}.untuned{% endif %}"
+    dest: "{{ postgresql_conf_directory }}/postgresql.conf{% if postgresql_pgtune %}.untuned{% endif %}"
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: 0640
   register: postgresql_configuration_pt2
+  notify: reload postgresql
 
 - name: PostgreSQL | Update configuration - pt. 3 (pgtune)
   become: true
@@ -100,9 +116,9 @@
     TMPDIR=$(mktemp -d)
     pgtune --input-config=postgresql.conf.untuned\
            --output-config=$TMPDIR/postgresql.conf\
-           {% if postgresql_pgtune_memory %}--memory {{postgresql_pgtune_memory|int}}{% endif %}\
-           --type {{postgresql_pgtune_type|quote}}\
-           {% if postgresql_pgtune_connections %}--connections {{postgresql_pgtune_connections|int}}{% endif %}\
+           {% if postgresql_pgtune_memory %}--memory {{ postgresql_pgtune_memory|int }}{% endif %}\
+           --type {{ postgresql_pgtune_type|quote }}\
+           {% if postgresql_pgtune_connections %}--connections {{ postgresql_pgtune_connections|int }}{% endif %}\
     # Compare the current config with the one procuded by pgtune (ignoring comments/blanks)
     if diff --ignore-blank-lines \
         <(sed -e 's/#.*//' postgresql.conf) \
@@ -116,15 +132,88 @@
     rm $TMPDIR/postgresql.conf
     rmdir $TMPDIR
   args:
-    chdir: "{{postgresql_conf_directory}}"
+    chdir: "{{ postgresql_conf_directory }}"
     executable: "/bin/bash"
   when: postgresql_pgtune
   register: postgresql_configuration_pt3
+  notify: reload postgresql
   changed_when: "'_OK_' not in postgresql_configuration_pt3.stdout"
+
+- name: PostgreSQL | Generate SSL Private Key | RedHat >= v7
+  openssl_privatekey:
+    path: "{{ postgresql_ssl_key_file }}"
+    type: "RSA"
+    size: "{{ postgresql_ssl_key_length }}"
+  become: true
+  become_user: "{{ postgresql_service_user }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('7','>=') and
+        postgresql_ssl
+
+- name: PostgreSQL | Generate SSL Private Key | RedHat <= v6
+  shell: "umask 0077; openssl genrsa {{ postgresql_ssl_key_length }}  > {{ postgresql_ssl_key_file }}"
+  args:
+    creates: "{{ postgresql_ssl_key_file }}"
+  become: true
+  become_user: "{{ postgresql_service_user }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('6','<=') and
+        postgresql_ssl
+
+- name: PostgreSQL | Secure SSL Private Key | RedHat
+  file:
+    path: "{{ postgresql_ssl_key_file }}"
+    owner: "{{ postgresql_service_user }}"
+    group: "{{ postgresql_service_group }}"
+    mode: 0600
+  when: ansible_os_family == "RedHat" and
+        postgresql_ssl
+
+- name: PostgreSQL | Create CSR for SSL Certificate | RedHat >= v7
+  openssl_csr:
+    common_name: "{{ ansible_fqdn }}"
+    path: "{{ postgresql_ssl_csr_file }}"
+    privatekey_path: "{{ postgresql_ssl_key_file }}"
+  become: true
+  become_user: "{{ postgresql_service_user }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('7','>=') and
+        postgresql_ssl
+
+- name: PostgreSQL | Generate/Validate SSL Certificate | RedHat >= v7
+  openssl_certificate:
+    path: "{{ postgresql_ssl_cert_file }}"
+    privatekey_path: "{{ postgresql_ssl_key_file }}"
+    provider: "selfsigned"
+    csr_path: "{{ postgresql_ssl_csr_file }}"
+  become: true
+  become_user: "{{ postgresql_service_user }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('7','>=') and
+        postgresql_ssl
+
+- name: PostgreSQL | Generate SSL Certificate | RedHat <= v6
+  shell: "umask 0022; openssl req -new -x509 -key {{ postgresql_ssl_key_file }} -out {{ postgresql_ssl_cert_file }} -subj \"/C=XX/ST=''/L=''/O=''/OU=''/CN='{{ ansible_nodename }}'\""
+  args:
+    creates: "{{ postgresql_ssl_cert_file }}"
+  become: true
+  become_user: "{{ postgresql_service_user }}"
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('6','<=') and
+        postgresql_ssl
+
+- name: PostgreSQL | Secure SSL Certificate | RedHat
+  file:
+    path: "{{ postgresql_ssl_cert_file }}"
+    owner: "{{ postgresql_service_user }}"
+    group: "{{ postgresql_service_group }}"
+    mode: 0644
+  when: ansible_os_family == "RedHat" and
+        postgresql_ssl
 
 - name: PostgreSQL | Create folder for additional configuration files
   file:
-    name: "{{postgresql_conf_directory}}/conf.d"
+    name: "{{ postgresql_conf_directory }}/conf.d"
     state: directory
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
@@ -136,13 +225,24 @@
     state: directory
     mode: 0755
   when: ansible_os_family == "RedHat"
+  notify: restart postgresql
 
-- name: PostgreSQL | Use the conf directory when starting the Postgres service | RedHat
+- name: PostgreSQL | Create postgresql service for this cluster | RedHat v7 and later
   template:
-    src: etc_systemd_system_postgresql.service.d_custom.conf.j2
-    dest: "/etc/systemd/system/postgresql-{{ postgresql_version }}.service.d/custom.conf"
-  when: ansible_os_family == "RedHat"
-  register: postgresql_systemd_custom_conf
+    src: etc_systemd_system_postgresql.service.j2
+    dest: "/etc/systemd/system/{{ postgresql_service_name }}.service"
+    owner: root
+    group: root
+    mode: 0644
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('7', '>=')
+  register: postgresql_systemd_service_create
+
+- name: PostgreSQL | Ensure the systemd daemon reloaded | RedHat v7 and later
+  command: systemctl daemon-reload
+  when: ansible_os_family == "RedHat" and
+        ansible_distribution_major_version | version_compare('7', '>=') and
+        postgresql_systemd_service_create.changed
 
 - name: PostgreSQL | Ensure the pid directory for PostgreSQL exists
   file:
@@ -151,6 +251,7 @@
     owner: "{{ postgresql_service_user }}"
     group: "{{ postgresql_service_group }}"
     mode: u=rwX,g=rwXs,o=rx
+  notify: restart postgresql
 
 - name: PostgreSQL | Enable service
   service:
@@ -158,8 +259,30 @@
     enabled: yes
   when: postgresql_service_enabled
 
-- name: PostgreSQL | Restart PostgreSQL
+- name: PostgreSQL | Ensure PostgreSQL is running
   service:
     name: "{{ postgresql_service_name }}"
-    state: restarted
-  when: postgresql_configuration_pt1.changed or postgresql_configuration_pt2.changed or postgresql_configuration_pt3.changed or postgresql_systemd_custom_conf.changed
+    state: started
+  register: postgresql_cold_started
+
+- name: PostgreSQL | Reload all conf files
+  service:
+    name: "{{ postgresql_service_name }}"
+    state: reloaded
+  notify: reload postgresql
+  when: not postgresql_cold_started.changed and
+        ( postgresql_configuration_pt1.changed or
+          postgresql_configuration_pt2.changed or
+          postgresql_configuration_pt3.changed or
+          postgresql_systemd_service_create.changed)
+
+- name: PostgreSQL | Check for parameter changes that require a restart | >= v9.5
+  become: yes
+  become_user: "{{ postgresql_service_user }}"
+  shell: "{{ postgresql_bin_directory }}/psql postgres --username {{ postgresql_admin_user }} --tuples-only --command='SELECT count(*) COUNT FROM pg_settings WHERE pending_restart IS true;'"
+  register: postgresql_check_for_param_changes
+  notify: reload postgresql
+  when: not postgresql_cold_started.changed and
+        postgresql_version | version_compare('9.5','>=')
+  changed_when: postgresql_check_for_param_changes.rc == 0 and
+                postgresql_check_for_param_changes.stdout | replace (' ','') != "0"
