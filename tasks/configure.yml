@@ -253,7 +253,7 @@
     mode: u=rwX,g=rwXs,o=rx
   notify: restart postgresql
 
-- name: PostgreSQL | Reload all conf files
+- name: PostgreSQL | Enable service
   service:
     name: "{{ postgresql_service_name }}"
     enabled: yes
