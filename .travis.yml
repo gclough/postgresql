@@ -1,36 +1,35 @@
 ---
+
 language: python
 python: "2.7"
+sudo: required
+dist: trusty
+services:
+  - docker
 
 env:
-  - POSTGRESQL_VERSION=9.1 ROLE_OPTIONS="postgresql_shared_buffers=32MB"
-  - POSTGRESQL_VERSION=9.2 ROLE_OPTIONS="postgresql_shared_buffers=32MB"
-  - POSTGRESQL_VERSION=9.3 ROLE_OPTIONS="postgresql_shared_buffers=32MB"
-  - POSTGRESQL_VERSION=9.4 ROLE_OPTIONS="postgresql_shared_buffers=32MB"
-  - POSTGRESQL_VERSION=9.5 ROLE_OPTIONS="postgresql_shared_buffers=32MB"
+  matrix:
+    - IMAGE_NAME="ubuntu-upstart:14.04"
+    - IMAGE_NAME="ubuntu:16.04-builded"
+    - IMAGE_NAME="debian:8-builded"
+    - IMAGE_NAME="debian:9-builded"
+    - IMAGE_NAME="centos:7-builded"
+    - IMAGE_NAME="centos:6-builded"
 
-before_install:
-  # Remove the PostgreSQL installed by Travis
-  - sudo apt-get purge pgdg-keyring '^postgresql.*' -y
-  - sudo apt-get autoremove
-  - sudo rm -rf /etc/postgresql
-  - sudo rm -rf /var/lib/postgresql
-  - sudo rm /etc/apt/sources.list.d/pgdg-source.list
-  # Install some dependencies
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq python-apt python-pycurl locales
-  - echo 'en_US.UTF-8 UTF-8' | sudo tee /var/lib/locales/supported.d/local
 install:
-  - pip install ansible==1.8.4
-script:
-  - echo localhost > inventory
+  - pip install ansible=="2.4.2.0" docker-py
+  - ln -s ${PWD} tests/docker/ANXS.postgresql
 
+script:
   # Syntax check
-  - ansible-playbook -i inventory tests/test.yml --syntax-check
+  - ansible-playbook -i tests/docker/hosts -e image_name=${IMAGE_NAME} tests/docker/site.yml --syntax-check
 
   # Play test
-  - ansible-playbook -i inventory tests/test.yml --connection=local --sudo -e "postgresql_version=$POSTGRESQL_VERSION $ROLE_OPTIONS"
+  - ansible-playbook -i tests/docker/hosts -e image_name=${IMAGE_NAME} tests/docker/site.yml
 
   # Idempotence test
-  - ansible-playbook -i inventory tests/test.yml --connection=local --sudo -e "postgresql_version=$POSTGRESQL_VERSION $ROLE_OPTIONS" > idempotence_out
+  - ansible-playbook -i tests/docker/hosts -e image_name=${IMAGE_NAME} tests/docker/site.yml > idempotence_out
   - ./tests/idempotence_check.sh idempotence_out
+
+notifications:
+  webhooks: https://galaxy.ansible.com/api/v1/notifications/
