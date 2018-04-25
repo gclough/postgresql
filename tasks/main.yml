@@ -12,6 +12,14 @@
       - "{{ ansible_os_family }}-{{ ansible_distribution_major_version }}.yml"
       skip: true
 
+# Override config with any local variables
+- name: PostgreSQL | Include Variables | Inventory, host_vars
+  include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+      - "{{ inventory_dir }}/host_vars/{{ ansible_fqdn }}/vars"
+      skip: true
+
 - import_tasks: install.yml
   when: ansible_pkg_mgr == "apt"
   tags: [postgresql, postgresql-install]
@@ -26,6 +34,14 @@
 - import_tasks: tune.yml
   when: postgresql_tune_server_use != false
   tags: [postgresql, postgresql-configure]
+
+# Override config with any local variables
+- name: PostgreSQL | Include Variables | Inventory, host_vars
+  include_vars: "{{ item }}"
+  with_first_found:
+    - files:
+      - "{{ inventory_dir }}/host_vars/{{ ansible_fqdn }}/vars"
+      skip: true
 
 - import_tasks: configure.yml
   tags: [postgresql, postgresql-configure]
