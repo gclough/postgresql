@@ -16,6 +16,26 @@
     mode: 0700
   register: pgdata_dir_exist
 
+- name: PostgreSQL | Make sure the postgres WAL directory exists
+  file:
+    path: "{{ postgresql_wal_directory }}"
+    owner: "{{ postgresql_service_user }}"
+    group: "{{ postgresql_service_group }}"
+    state: directory
+    mode: 0700
+  register: pgwal_dir_exist
+  when: postgresql_wal_directory != ""
+
+- name: PostgreSQL | Make sure the postgres log directory exists
+  file:
+    path: "{{ postgresql_log_directory }}"
+    owner: "{{ postgresql_service_user }}"
+    group: "{{ postgresql_service_group }}"
+    state: directory
+    mode: 0700
+  register: pglog_dir_exist
+  when: postgresql_log_directory != "pg_log"
+
 - name: PostgreSQL | Ensure the locale for lc_collate and lc_ctype is generated | Debian
   become: yes
   locale_gen: name="{{ item }}" state=present
@@ -44,6 +64,7 @@
     pg_createcluster --start --locale {{ postgresql_locale }}
     -e {{ postgresql_encoding }} -d {{ postgresql_data_directory }}
     {{ postgresql_version }} {{ postgresql_cluster_name }}
+    --
     {% if postgresql_data_checksums and postgresql_version | version_compare('9.3', '>=') %}--data-checksums{% endif %}
     {% if postgresql_pwfile != "" %}--pwfile={{ postgresql_pwfile }} {% endif %}
     {% if postgresql_wal_directory != "" and postgresql_version | version_compare('10', '<') %}--xlogdir={{ postgresql_wal_directory }} {% endif %}
