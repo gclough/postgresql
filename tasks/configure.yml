@@ -203,7 +203,7 @@
 
 - name: PostgreSQL | Create CSR for SSL Certificate | RedHat >= v7
   openssl_csr:
-    common_name: "{{ ansible_fqdn }}"
+    common_name: "{{ ansible_nodename }}"
     path: "{{ postgresql_ssl_csr_file }}"
     privatekey_path: "{{ postgresql_ssl_key_file }}"
   become: true

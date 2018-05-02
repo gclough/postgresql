@@ -17,7 +17,7 @@
   include_vars: "{{ item }}"
   with_first_found:
     - files:
-      - "{{ inventory_dir }}/host_vars/{{ ansible_fqdn }}/vars"
+      - "{{ inventory_dir }}/host_vars/{{ ansible_nodename }}/vars"
       skip: true
 
 - import_tasks: install_apt.yml
@@ -44,7 +44,7 @@
   include_vars: "{{ item }}"
   with_first_found:
     - files:
-      - "{{ inventory_dir }}/host_vars/{{ ansible_fqdn }}/vars"
+      - "{{ inventory_dir }}/host_vars/{{ ansible_nodename }}/vars"
       skip: true
 
 - import_tasks: configure.yml
