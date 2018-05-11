@@ -30,9 +30,10 @@
           state: present
         environment: "{{ postgresql_env }}"
         with_items:
-          - "postgresql{{ postgresql_version_terse }}-server"
-          - "postgresql{{ postgresql_version_terse }}"
-          - "postgresql{{ postgresql_version_terse }}-contrib"
+          - "postgresql{{ postgresql_version_terse }}{% if postgresql_patch_version != '' %}-{{ postgresql_patch_version }}{% endif %}"
+          - "postgresql{{ postgresql_version_terse }}-libs{% if postgresql_patch_version != '' %}-{{ postgresql_patch_version }}{% endif %}"
+          - "postgresql{{ postgresql_version_terse }}-server{% if postgresql_patch_version != '' %}-{{ postgresql_patch_version }}{% endif %}"
+          - "postgresql{{ postgresql_version_terse }}-contrib{% if postgresql_patch_version != '' %}-{{ postgresql_patch_version }}{% endif %}"
 
       - name: PostgreSQL | PGTune | yum
         yum:
